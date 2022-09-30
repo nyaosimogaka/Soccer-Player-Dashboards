@@ -1,3 +1,3 @@
 # soccer-events
 
-This app will be built using R SHiny to demonstrate level-1 soccer match analysis (Quantitative Assessments)
+This app has been built using R Shiny to demonstrate level-1 soccer match analysis (Quantitative Assessments)
