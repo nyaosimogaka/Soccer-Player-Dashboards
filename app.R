@@ -1,12 +1,14 @@
+#Load Libraries
 library(shiny)
 library(dplyr)
-library(forcats)
+library(ggplot2)
+library(ggsoccer)
+## DATA PROCESSING ----
 
-
-#Read data
+#Read data ----
 df <- read.csv("EventData.csv")
 
-#Convert and reformat data types
+#Convert and reformat data types ----
 df$Mins <- as.numeric(df$Mins)
 df$Y <- 100-as.numeric(df$Y)
 df$Y2 <- 100-as.numeric(df$Y2)
@@ -42,24 +44,6 @@ display.details <- function(x) {
       ) %>%
     select(Opponent, Event, period, Timestamp)
 }
-
-calculate.minsplayed <- function(x) {
-  if (all(x$Subcategory == 'Full Time')) {
-    return(data.frame(x$Mins))
-  } else if (all(x$Subcategory %in% c('Full Time', 'Sub In'))) {
-    subin.value <- x$Mins[x$Subcategory == 'Sub In']
-    ft.value <- x$Mins[x$Subcategory == 'Full Time']
-    return(data.frame(ft.value - subin.value))
-  } else if (all(x$Subcategory %in% c('Full Time', 'Sub Out'))) {
-    return(data.frame(x$Mins[x$Subcategory == 'Sub Out']))
-  } else if (all(x$Subcategory %in% c('Sub In', 'Sub Out', 'Full Time'))) {
-    subin.value <- x$Mins[x$Subcategory == 'Sub In']
-    subout.value <- x$Mins[x$Subcategory == 'Sub Out']
-    return(data.frame(subout.value - subin.value))
-  }
-}
-
-
 
 #Goals Function
 calculate.goals <- function(x) {
@@ -134,53 +118,57 @@ calculate.dribbles <- function(x) {
 
 graphs <- c("shot map", "pass map", "touch map")
 
-# Define UI for application
+# Define UI for random distribution app ----
 ui <- fluidPage(
-   theme = bslib::bs_theme(bootswatch = "darkly"),
-
-  # Application title
-  titlePanel("Soccer Performance Evaluation"),
+  #App Theme ----
+  theme = bslib::bs_theme(bootswatch = "darkly"),
   
-  #Tab-set Panel for Team Dashboards, Player Dashboards, Team Comparisons and Player Comparisons 
-  mainPanel(
-    tabsetPanel(
-      tabPanel("Player", br(),
-               sidebarLayout(
-                 sidebarPanel(
-                   selectInput("tournament", "Select Tournament", choices = unique(df$Tournament)),
-                   selectInput("tarehe", "Select Date", choices = unique(df$Date)),
-                   selectInput("team", "Select Team", choices = unique(df$Team)),
-                   selectInput("player", "Select Player", choices = unique(df$Player)),
-                   checkboxGroupInput("plotz", "Select plots to graph", graphs)
-                 ),
-                 mainPanel(
-                   tableOutput("minutes_"),
-                   tableOutput("goals"),
-                   tableOutput("shots"),
-                   tableOutput("fouls"),
-                   tableOutput("cards"),
-                   tableOutput("duels"),
-                   tableOutput("recoveries"),
-                   tableOutput("dribbles"),
-                   # plotOutput("viz"),
-                   # plotOutput("viz2"),
-                   # plotOutput("viz3"),
-                   dataTableOutput("details")
-                 )
-               )),
-      tabPanel("Team", br(),
-               sidebarLayout(
-                 sidebarPanel(
-                   selectInput("tournament", "Select Tournament", choices = unique(df$Tournament)),
-                   selectInput("tarehe", "Select Date", choices = unique(df$Date)),
-                   selectInput("team", "Select Team", choices = unique(df$Team))                 ),
-                 mainPanel(
-                   #tableOutput("goals")
-                 )
-               ))
+  # App title ----
+  titlePanel("Player Evaluation"),
+  
+  # Sidebar layout with input and output definitions ----
+  sidebarLayout(
+    
+    # Sidebar panel for inputs ----
+    sidebarPanel(
+      
+      # Input: Select the tournament, date, team and player to filter ----
+      selectInput("tournament", "Select Tournament", choices = unique(df$Tournament)),
+      selectInput("tarehe", "Select Date", choices = unique(df$Date)),
+      selectInput("team", "Select Team", choices = unique(df$Team)),
+      selectInput("player", "Select Player", choices = unique(df$Player)),
+      
+      # br() element to introduce extra vertical spacing ----
+      br(),
+      
+      # Input: Checkbox for the user defined plots ----
+      checkboxGroupInput("plotz", "Select plots to graph", graphs)
+      
+    ),
+    
+    # Main panel for displaying outputs ----
+    mainPanel(
+      
+      # Output: Tabset w/ plot, summary, and table ----
+      tabsetPanel(type = "tabs",
+                  tabPanel("Summary", tableOutput("minutes_"),
+                           tableOutput("goals"),
+                           tableOutput("shots"),
+                           tableOutput("fouls"),
+                           tableOutput("cards"),
+                           tableOutput("duels"),
+                           tableOutput("recoveries"),
+                           tableOutput("dribbles")),
+                  tabPanel("Plot", plotOutput("viz")
+                           # plotOutput("viz2"),
+                           # plotOutput("viz3")
+                           ),
+                  tabPanel("Match Events", dataTableOutput("details")),
+                  )
+                  
+      )
     )
   )
-)
 
 # Define server logic 
 server <- function(input, output, session) {
@@ -330,18 +318,18 @@ server <- function(input, output, session) {
   options = list(
     pageLength = 5))
   
-  # #SHOTS PLOT
-  # output$viz <- renderPlot({
-  #   events.data <- values$df %>%
-  #     filter(Category == 'Shot') %>% 
-  #     select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y)
-  #   
-  #   ggplot(events.data, aes(x=X, y=Y, color = Subcategory)) + 
-  #     annotate_pitch(fill = 'darkgrey', colour = 'white') + 
-  #     geom_point() + 
-  #     theme_pitch()
-  # })
-  # 
+  #SHOTS PLOT ----
+  output$viz <- renderPlot({
+    events.data <- values$df %>%
+      filter(Category == 'Shot') %>%
+      select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y)
+
+    ggplot(events.data, aes(x=X, y=Y, color = Subcategory)) +
+      annotate_pitch(fill = 'darkgrey', colour = 'white') +
+      geom_point() +
+      theme_pitch()
+  })
+
   # #PASS MAP
   # output$viz2 <- renderPlot({
   #   events.data <- values$df %>%
