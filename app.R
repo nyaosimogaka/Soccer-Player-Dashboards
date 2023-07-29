@@ -1,130 +1,145 @@
-#Load libraries
 library(shiny)
-library(readxl)
-library(dplyr)
-library(magrittr)
-library(stringr)
-library(tidyr)
 library(dplyr)
 library(forcats)
-library(ggplot2)
-library(ggsoccer)
+
 
 #Read data
-df <- read.csv("full.csv")
+df <- read.csv("EventData.csv")
 
-#Define Minutes Played Function
-calculate.minsplayed <- function(x) {
-  if(all(x$Event == 'FT')) {
-    return(data.frame(x$Mins))
-  } else if (all(x$Event %in% c('FT', 'Sub In'))) {
-    subin.value <- x$Mins[x$Event == 'Sub In']
-    ft.value <- x$Mins[x$Event == 'FT']
-    return(data.frame(ft.value - subin.value))
-  } else if (all(x$Event %in% c('FT', 'Sub Out'))) {
-    return(data.frame(x$Mins[x$Event == 'Sub Out']))
-  } else if (all(x$Event %in% c('Sub In', 'Sub Out', 'FT'))) {
-    subin.value <- x$Mins[x$Event == 'Sub In']
-    subout.value <- x$Mins[x$Event == 'Sub Out']
-    return(data.frame(subout.value - subin.value))
-  }
-}
-
-#Define Fouls Function
-calculate.fouls <- function(x) {
-  fouls <- x %>%
-    filter(Event == 'Foul') %>%
-    select(Event) %>%
-    count(Event)
-}
-
-#Cards Function
-calculate.cards <- function(x) {
-  cards <- x %>%
-    filter(Result == 'yellow card' | Result == 'red card') %>%
-    select(Result) %>%
-    count(Result)
-}
-
-#Define Shots Function
-calculate.shots <- function(x) {
-  shots <- x %>%
-    filter(Type == 'Shot') %>%
-    select(Type, Event) %>%
-    group_by(Type, Event) %>%
-    count(Event) %>%
-    pivot_wider(names_from = Event, values_from = n)
-}
-
-#Goals Function
-calculate.goals <- function(x) {
-  goals <- x %>%
-    filter(Result == 'goal') %>%
-    select(Result) %>%
-    count(Result)
-}
-
-#Player Dashboard 1 Merge mins_played, fouls, cards, shots, goals function
-
-
-
-#Player Dashboard 2 Function
-calculate.playersummary <- function(x) {
-  player.summary <- x %>%
-    select(Type, Event, Result) %>%
-    group_by(Type, Event) %>%
-    mutate(Event = fct_recode(Event, `INT/Tkl` = 'Tackle', `INT/Tkl` = 'INT')) %>%
-    mutate(Result = fct_recode(Result, good = 'RefAdv', good = 'won', good = 'sucsessful', good = 'complete', good = 'possession gain', `not good` = 'out of bounds', `not good` = 'incomplete', `not good` = 'possession loss', `not good` = 'save', `not good` = 'RefStop', `not good` = 'block', `not good` = 'unsucsessful', `not good` = 'lost', `good` = 'goal', `not good` = 'yellow card', `not good` = 'red card')) %>%
-    mutate(Result = fct_explicit_na(Result, "not good")) %>%
-    mutate(Result = replace(Result, Type=='Shot', 'good')) %>%
-    mutate(Result = replace(Result, Event=='INT/Tkl', 'good')) %>%
-    count(Result) %>%
-    pivot_wider(names_from = Result, values_from = n) %>%
-    drop_na(Type) %>%
-    mutate(across(where(is.numeric), tidyr::replace_na, 0)) %>%
-    mutate(total = good + `not good`) %>%
-    mutate(`%` = good/total * 100) %>%
-    subset(select = -c(`not good`)) %>%
-    mutate_if(is.numeric, ~round(., 0)) %>%
-    filter(!((Event == 'Fouled') | (Type == 'restart') | (Type == 'Shot') | (Event == 'Foul')))
-}
+#Convert and reformat data types
+df$Mins <- as.numeric(df$Mins)
+df$Y <- 100-as.numeric(df$Y)
+df$Y2 <- 100-as.numeric(df$Y2)
+df$X <- as.numeric(df$X)
+df$X2 <- as.numeric(df$X2)
 
 #Player Details Table Function
 display.details <- function(x) {
   details.table <- x %>%
-    select(Period, Type, Event, Result, Mins, Secs)
+    select(Opponent, Category, Subcategory, Result, period, Timestamp) %>%
+    mutate(
+      Event = case_when(
+        Category == "Pass" ~ paste(Result, Category, "(", Subcategory, ")", sep = " "),
+        Category == "Shot" ~ paste(Category, Subcategory, "(", Result, ")", sep = " "),
+        Category == "Block" ~ paste(Category),
+        Category == "FK" ~ paste("Free Kick"),
+        Subcategory == "Offside" ~ paste(Subcategory),
+        Subcategory == "Kick Off" ~ paste(Subcategory),
+        Subcategory == "Half Time" ~ paste(Subcategory),
+        Subcategory == "Full Time" ~ paste(Subcategory),
+        Subcategory == "Fouled" ~ paste(Subcategory),
+        Subcategory == "Foul" ~ paste(Subcategory),
+        Subcategory == "Clearance" ~ paste(Subcategory),
+        Subcategory == "Carry" ~ paste(Subcategory),
+        Subcategory == "Touch" ~ paste(Subcategory, "(", Result, ")"),
+        Subcategory == "Sub In" ~ paste("Substitute On"),
+        Subcategory == "Sub Out" ~ paste("Substitute Off"),
+        Subcategory == "Interception" | Subcategory == "Tackle" ~ paste(Subcategory),
+        Subcategory == "Dribble" ~ paste(Result, Subcategory),
+        Category == "Duel" ~ paste(Result, " ", Subcategory, "-", Category, sep=""),
+        TRUE ~ "Other Scenarios" # Default narrative for all other cases
+        )
+      ) %>%
+    select(Opponent, Event, period, Timestamp)
 }
 
-#Player Viz Function
-display.plot <- function(x) {
-  viz1 <- x %>%
-    select(Type, Event, Result, Mins, Secs, X, Y) %>%
-    mutate(secs = if_else(Secs <=9, paste0('0',Secs), as.character(Secs))) %>%
-    mutate(Time = paste0(Mins, ":", secs)) %>%
-    select(Type, Event, Result, Time, X, Y) %>%
-    #Filter out events that do not include possession gain/loss
-    filter(!(Event == 'Foul' | Event == 'Fouled' | Event == 'Sub Out' | Event == 'Sub In' | Event == 'Fairplay Start' 
-             | Event == 'start' | Event == 'kick off' | Type == 'shot' | Event == 'loose ball duel' | Event == 'aerial duel'
-             | Event == 'RefStop' | Event == 'fair play' | Event == 'offside' | Event == 'HT' | Event == 'FT' | Type == 'set piece'
-             | Event == 'Out Of Scope' | Type == 'Shot')) %>%
-    filter(!(Type == 'pass' & Result == 'complete') & !(Event == 'launch' & Result == 'out of bounds') 
-           & !(Event == 'throw' & Result == 'complete') & !(Event == 'touch' & Result == 'out of bounds')
-           & !(Event == 'touch' & Result == 'out of bounds') & !(Type == 'set piece' & Event == 'corner kick')
-           & !(Event == 'launch' & Event == 'possession loss') & !(Event == 'block' & is.na(Event))
-           & !(Event == 'touch' & is.na(Result)) & !(Event == 'launch' & is.na(Result))
-           & !(Event == 'touch' & Result == 'possession loss') & !(Event == 'pass' & is.na(Result))
-           & !(Event == 'block' & Result == 'out of bounds') & !(Event == 'dribble' & is.na(Result))
-           & !(Event == 'dribble' & Result == 'successful') & !(Event == 'dribble' & Result == 'sucsessful')
-           & !(Event == 'pass' & Result == 'save') & !(Event == 'launch' & Result == 'block') 
-           & !(Event == 'block' & Result == 'possession loss'))
+calculate.minsplayed <- function(x) {
+  if (all(x$Subcategory == 'Full Time')) {
+    return(data.frame(x$Mins))
+  } else if (all(x$Subcategory %in% c('Full Time', 'Sub In'))) {
+    subin.value <- x$Mins[x$Subcategory == 'Sub In']
+    ft.value <- x$Mins[x$Subcategory == 'Full Time']
+    return(data.frame(ft.value - subin.value))
+  } else if (all(x$Subcategory %in% c('Full Time', 'Sub Out'))) {
+    return(data.frame(x$Mins[x$Subcategory == 'Sub Out']))
+  } else if (all(x$Subcategory %in% c('Sub In', 'Sub Out', 'Full Time'))) {
+    subin.value <- x$Mins[x$Subcategory == 'Sub In']
+    subout.value <- x$Mins[x$Subcategory == 'Sub Out']
+    return(data.frame(subout.value - subin.value))
+  }
 }
 
+
+
+#Goals Function
+calculate.goals <- function(x) {
+  goals.table <- x %>%
+    filter(Result == 'Goal') %>%
+    select(Result) %>%
+    count(Result)
+}
+
+#Shots Function
+calculate.shots <- function(x) {
+  shots.table <- x %>%
+    filter(Category == 'Shot') %>%
+    select(Category, Subcategory) %>%
+    group_by(Category, Subcategory) %>%
+    count(Subcategory)
+}
+
+#Fouls Function
+calculate.fouls <- function(x) {
+  fouls.table <- x %>%
+    filter(Subcategory == 'Foul') %>%
+    select(Subcategory) %>%
+    count(Subcategory)
+}
+
+#Cards Function (Update to handle, Disc-Foul-yc, Disc-Foul-2yc, Disc-Foul-rc)
+calculate.cards <- function(x) {
+  cards.tables <- x %>%
+    filter(Result == 'Yellow Card' | Result == 'Red Card') %>%
+    select(Result) %>%
+    count(Result)
+}
+
+#Challenges Function
+calculate.duels <- function(x) {
+  duels.table <- x %>% 
+    filter(Category == 'Duel') %>% 
+    mutate(Narrative = case_when( 
+      Category == "Duel" ~ paste(Subcategory, Category, sep = " "),
+      TRUE ~ "Other Scenarios" # Default narrative for all other cases
+    )
+    ) %>%
+    select(Narrative, Result) %>%
+    group_by(Narrative, Result) %>%
+    count(Result)
+}
+
+#Ball Recoveries Function
+calculate.recoveries <- function(x) {
+  recoveries.table <- x %>% 
+    filter(Subcategory == 'Interception' | Subcategory == 'Tackle') %>% 
+    select(Subcategory) %>% 
+    mutate(
+      Narrative = case_when(
+        Subcategory == "Interception" | Subcategory == "Tackle" ~ paste("Int/Tkl"), 
+        TRUE ~ "Other Scenarios"
+      )
+    ) %>% 
+    select(Narrative) %>% 
+    count(Narrative)
+}
+
+#Dribbles Function
+calculate.dribbles <- function(x) {
+  dribbles.table <- x %>% 
+    filter(Subcategory == 'Dribble') %>%
+    select(Subcategory, Result) %>%
+    group_by(Subcategory, Result) %>%
+    count(Result)
+}
+
+graphs <- c("shot map", "pass map", "touch map")
 
 # Define UI for application
 ui <- fluidPage(
-  
+   theme = bslib::bs_theme(bootswatch = "darkly"),
+
   # Application title
-  titlePanel("Soccer Dashboards"),
+  titlePanel("Soccer Performance Evaluation"),
   
   #Tab-set Panel for Team Dashboards, Player Dashboards, Team Comparisons and Player Comparisons 
   mainPanel(
@@ -133,40 +148,58 @@ ui <- fluidPage(
                sidebarLayout(
                  sidebarPanel(
                    selectInput("tournament", "Select Tournament", choices = unique(df$Tournament)),
-                   selectInput("match", "Select Match", choices = unique(df$MatchID)),
+                   selectInput("tarehe", "Select Date", choices = unique(df$Date)),
                    selectInput("team", "Select Team", choices = unique(df$Team)),
-                   selectInput("player", "Select Player", choices = unique(df$Player))
+                   selectInput("player", "Select Player", choices = unique(df$Player)),
+                   checkboxGroupInput("plotz", "Select plots to graph", graphs)
                  ),
                  mainPanel(
-                   plotOutput("playerviz"),
-                   tableOutput("playersummary1"),
-                   tableOutput("playersummary2"),
+                   tableOutput("minutes_"),
+                   tableOutput("goals"),
+                   tableOutput("shots"),
+                   tableOutput("fouls"),
+                   tableOutput("cards"),
+                   tableOutput("duels"),
+                   tableOutput("recoveries"),
+                   tableOutput("dribbles"),
+                   # plotOutput("viz"),
+                   # plotOutput("viz2"),
+                   # plotOutput("viz3"),
                    dataTableOutput("details")
+                 )
+               )),
+      tabPanel("Team", br(),
+               sidebarLayout(
+                 sidebarPanel(
+                   selectInput("tournament", "Select Tournament", choices = unique(df$Tournament)),
+                   selectInput("tarehe", "Select Date", choices = unique(df$Date)),
+                   selectInput("team", "Select Team", choices = unique(df$Team))                 ),
+                 mainPanel(
+                   #tableOutput("goals")
                  )
                ))
     )
   )
 )
 
-
-# Define server logic required to draw a histogram
+# Define server logic 
 server <- function(input, output, session) {
-  
   #Observer to update tournament selection
   
   observeEvent(input$tournament,{
     tournament <- input$tournament
-    match_options <- unique(df[which(df$Tournament == tournament),]$MatchID)
+    match_options <- unique(df[which(df$Tournament == tournament),]$Date)
     
-    updateSelectInput(session, inputId = "match",
+    updateSelectInput(session, inputId = "tarehe",
                       choices = match_options)
   })
   
-  #Observer to update match selection
+  #Observer to update date selection
   
-  observeEvent(input$match,{
-    match <- input$match
-    team_options <- unique(df[which(df$MatchID == match),]$Team)
+  observeEvent(input$tarehe,{
+    tournament <- input$tournament
+    tarehe <- input$tarehe
+    team_options <- unique(df[which(df$Tournament == tournament & df$Date == tarehe),]$Team)
     
     updateSelectInput(session, inputId = "team",
                       choices = team_options)
@@ -175,8 +208,10 @@ server <- function(input, output, session) {
   #Observer to update team selection
   
   observeEvent(input$team,{
+    tournament <- input$tournament
+    tarehe <- input$tarehe
     team <- input$team
-    player_options <- unique(df[which(df$Team == team),]$Player)
+    player_options <- unique(df[which(df$Tournament == tournament & df$Date == tarehe & df$Team == team),]$Player)
     
     updateSelectInput(session, inputId = "player",
                       choices = player_options)
@@ -188,74 +223,157 @@ server <- function(input, output, session) {
     player <- input$player
   })
   
-  #Reactive data frame for match selection
+  #Reactive data frame for Tournament selection
   tournaments <- reactiveValues()
   observe({
     tournaments$df <- df[which(df$Tournament == input$tournament),]
   })
   
   #Reactive data frame for match selection
-  matchs <- reactiveValues()
+  tarehes <- reactiveValues()
   observe({
-    matchs$df <- df[which(df$Tournament == input$tournament & df$MatchID == input$match),]
+    tarehes$df <- df[which(df$Tournament == input$tournament & df$Date == input$tarehe),]
   })
   
   #Reactive data frame for team selection
   teams <- reactiveValues()
   observe({
-    teams$df <- df[which(df$Tournament == input$tournament & df$MatchID == input$match & df$Team == input$team),]
+    teams$df <- df[which(df$Tournament == input$tournament & df$Date == input$tarehe & df$Team == input$team),]
   })
   
   #Reactive data frame for player selection
   values <- reactiveValues()
   observe({
-    values$df <- df[which(df$Tournament == input$tournament & df$MatchID == input$match & df$Team == input$team & df$Player == input$player),]
+    values$df <- df[which(df$Tournament == input$tournament & df$Date == input$tarehe & df$Team == input$team & df$Player == input$player),]
   })
   
-  #DASHBOARD 1
-  
-  output$playersummary1 <- renderTable({
-    events.data <- values$df
-    marker.data <- matchs$df %>%
-      filter(Event == 'start' | Event == 'HT' | Event == 'FT')
+  #Minutes Played
+  output$minutes_ <- renderTable({
+    marker.data <- tarehes$df %>%
+      filter(Subcategory == 'Full Time')
+    events.data <- values$df %>%
+      filter(Subcategory == 'Sub Out' | Subcategory == 'Sub In')
+    #bind marker.data and events.data to a new data frame(full.data)
     full.data <- rbind(events.data, marker.data)
+    #calculate minutes played on full.data
     full.data %>%
-      calculate.minsplayed()
+      mutate(
+        mins_play = case_when(
+          all(Subcategory == 'Full Time') ~ Mins,
+          all(Subcategory %in% c('Full Time', 'Sub In')) ~ last(Mins[Subcategory == 'Full Time']) - last(Mins[Subcategory == 'Sub In']),
+          all(Subcategory %in% c('Full Time', 'Sub Out')) ~ last(Mins[Subcategory == 'Sub Out']),
+          all(Subcategory %in% c('Sub In', 'Sub Out', 'Full Time')) ~ last(Mins[Subcategory == 'Sub Out']) - last(Mins[Subcategory == 'Sub In']),
+          TRUE ~ NA_real_  # Default action for unmatched cases
+        )
+      ) %>%
+      select(mins_play) %>%
+      distinct(mins_play, .keep_all = TRUE)
+  })
+
+  
+  #SHOTS INFO
+  output$goals <- renderTable({
+    events.data <- values$df
+    events.data %>%
+      calculate.goals()
   })
   
-  #DASHBOARD 2
-  output$playersummary2 <- renderTable({
+  #SHOTS INFO
+  output$shots <- renderTable({
     events.data <- values$df
-    
     events.data %>%
-      calculate.playersummary()
-  },
-  digits = 0)
+      calculate.shots()
+  })
   
-  #VIZ 1 Output - Touch Map
-  output$playerviz <- renderPlot({
+  #FOULS INFO
+  output$fouls <- renderTable({
     events.data <- values$df
-    
-    events.data <- events.data %>%
-      display.plot()
-    
-    ggplot(data = events.data, aes(x=X, y=Y, color = Result, shape = Event)) +
-      annotate_pitch(fill = 'springgreen4', colour = 'white') +
-      geom_point()+
-      theme_pitch()
+    events.data %>%
+      calculate.fouls()
+  })
+  
+  #CARDS INFO
+  output$cards <- renderTable({
+    events.data <- values$df
+    events.data %>%
+      calculate.cards()
+  })
+  
+  #PASS INFO
+  output$duels <- renderTable({
+    events.data <- values$df
+    events.data %>%
+      calculate.duels()
+  })
+  
+  #RECOVERIES INFO
+  output$recoveries <- renderTable({
+    events.data <- values$df
+    events.data %>%
+      calculate.recoveries()
+  })
+  
+  #DRIBBLES INFO
+  output$dribbles <- renderTable({
+    events.data <- values$df
+    events.data %>%
+      calculate.dribbles()
   })
   
   #DETAILS TABLE - Display specific events
   
   output$details <- renderDataTable({
     events.data <- values$df
-    marker.data <- matchs$df %>%
-      filter(Event == 'start' | Event == 'HT' | Event == 'FT')
-    full.data <- rbind(events.data, marker.data)
-    full.data %>%
+    events.data %>%
       display.details()
   },
-  options = list(pageLength = 5))
+  options = list(
+    pageLength = 5))
+  
+  # #SHOTS PLOT
+  # output$viz <- renderPlot({
+  #   events.data <- values$df %>%
+  #     filter(Category == 'Shot') %>% 
+  #     select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y)
+  #   
+  #   ggplot(events.data, aes(x=X, y=Y, color = Subcategory)) + 
+  #     annotate_pitch(fill = 'darkgrey', colour = 'white') + 
+  #     geom_point() + 
+  #     theme_pitch()
+  # })
+  # 
+  # #PASS MAP
+  # output$viz2 <- renderPlot({
+  #   events.data <- values$df %>%
+  #     filter(Category == 'Pass') %>% 
+  #     select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y, X2, Y2)
+  #   
+  #   ggplot(events.data, aes(x=X, y=Y, xend = X2, yend = Y2, color = Result)) + 
+  #     annotate_pitch(fill = 'darkgrey', colour = 'white') + 
+  #     geom_segment() + 
+  #     theme_pitch()
+  # })
+  # 
+  # #TOUCH MAP
+  # output$viz3 <- renderPlot({
+  #   events.data <- values$df %>%
+  #     filter(Category == 'Shot' | Category == 'Pass'| Category == 'Duel' | Category == 'Offense' | Category == 'Defense' | Subcategory == 'Offside') %>% 
+  #     mutate(Narrative = case_when(
+  #       Category == "Pass" ~ paste(Category),
+  #       Category == "Shot" ~ paste(Category),
+  #       Category == "Duel" ~ paste(Category),
+  #       Category == "Offense" ~ paste(Subcategory),
+  #       Category == "Defense" ~ paste(Subcategory),
+  #       Subcategory == "Offside" ~ paste(Subcategory),
+  #       TRUE ~ "Other Scenarios" # Default narrative for all other cases
+  #     )) %>%
+  #     select(Narrative, Timestamp, X, Y)
+  #   
+  #   ggplot(events.data, aes(x=X, y=Y, color = Narrative)) + 
+  #     annotate_pitch(fill = 'darkgrey', colour = 'white') + 
+  #     geom_point() + 
+  #     theme_pitch()
+  # })
   
 }
 
