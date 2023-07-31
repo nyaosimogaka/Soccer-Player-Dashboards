@@ -1,6 +1,8 @@
 #Load Libraries
 library(shiny)
 library(dplyr)
+library(tidyr)
+library(knitr)
 library(ggplot2)
 library(ggsoccer)
 ## DATA PROCESSING ----
@@ -59,7 +61,8 @@ calculate.shots <- function(x) {
     filter(Category == 'Shot') %>%
     select(Category, Subcategory) %>%
     group_by(Category, Subcategory) %>%
-    count(Subcategory)
+    count(Subcategory) %>%
+    pivot_wider(names_from = Subcategory, values_from = n)
 }
 
 #Fouls Function
@@ -116,6 +119,15 @@ calculate.dribbles <- function(x) {
     count(Result)
 }
 
+#Carries Function
+calculate.carries <- function(x) {
+  carries.table <- x %>% 
+    filter(Subcategory == 'Carry') %>%
+    select(Subcategory, Result) %>%
+    group_by(Subcategory, Result) %>%
+    count(Result)
+}
+
 graphs <- c("shot map", "pass map", "touch map")
 
 # Define UI for random distribution app ----
@@ -131,6 +143,7 @@ ui <- fluidPage(
     
     # Sidebar panel for inputs ----
     sidebarPanel(
+      width = 2, # Adjust the width of the sidebar
       
       # Input: Select the tournament, date, team and player to filter ----
       selectInput("tournament", "Select Tournament", choices = unique(df$Tournament)),
@@ -142,23 +155,26 @@ ui <- fluidPage(
       br(),
       
       # Input: Checkbox for the user defined plots ----
-      checkboxGroupInput("plotz", "Select plots to graph", graphs)
+      checkboxGroupInput("plotz", "Select plots to graph", graphs),
       
     ),
     
     # Main panel for displaying outputs ----
     mainPanel(
+      width = 10, # Adjust the width of the main panel
       
       # Output: Tabset w/ plot, summary, and table ----
       tabsetPanel(type = "tabs",
-                  tabPanel("Summary", tableOutput("minutes_"),
+                  tabPanel("Summary", 
+                           tableOutput("minutes_"),
                            tableOutput("goals"),
                            tableOutput("shots"),
                            tableOutput("fouls"),
                            tableOutput("cards"),
                            tableOutput("duels"),
                            tableOutput("recoveries"),
-                           tableOutput("dribbles")),
+                           tableOutput("dribbles"),
+                           tableOutput("carries")),
                   tabPanel("Plot", plotOutput("viz")
                            # plotOutput("viz2"),
                            # plotOutput("viz3")
@@ -234,7 +250,7 @@ server <- function(input, output, session) {
   observe({
     values$df <- df[which(df$Tournament == input$tournament & df$Date == input$tarehe & df$Team == input$team & df$Player == input$player),]
   })
-  
+ 
   #Minutes Played
   output$minutes_ <- renderTable({
     marker.data <- tarehes$df %>%
@@ -246,7 +262,7 @@ server <- function(input, output, session) {
     #calculate minutes played on full.data
     full.data %>%
       mutate(
-        mins_play = case_when(
+        minutes = case_when(
           all(Subcategory == 'Full Time') ~ Mins,
           all(Subcategory %in% c('Full Time', 'Sub In')) ~ last(Mins[Subcategory == 'Full Time']) - last(Mins[Subcategory == 'Sub In']),
           all(Subcategory %in% c('Full Time', 'Sub Out')) ~ last(Mins[Subcategory == 'Sub Out']),
@@ -254,8 +270,8 @@ server <- function(input, output, session) {
           TRUE ~ NA_real_  # Default action for unmatched cases
         )
       ) %>%
-      select(mins_play) %>%
-      distinct(mins_play, .keep_all = TRUE)
+      select(minutes) %>%
+      distinct(minutes, .keep_all = TRUE)
   })
 
   
@@ -306,6 +322,13 @@ server <- function(input, output, session) {
     events.data <- values$df
     events.data %>%
       calculate.dribbles()
+  })
+  
+  #CARRIES INFO
+  output$carries <- renderTable({
+    events.data <- values$df
+    events.data %>%
+      calculate.carries()
   })
   
   #DETAILS TABLE - Display specific events
