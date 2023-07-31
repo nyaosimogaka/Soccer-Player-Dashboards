@@ -123,12 +123,12 @@ calculate.dribbles <- function(x) {
 calculate.carries <- function(x) {
   carries.table <- x %>% 
     filter(Subcategory == 'Carry') %>%
-    select(Subcategory, Result) %>%
-    group_by(Subcategory, Result) %>%
-    count(Result)
+    select(Subcategory) %>%
+    group_by(Subcategory) %>%
+    count(Subcategory)
 }
 
-graphs <- c("shot map", "pass map", "touch map")
+graphs <- c("shot_map", "pass_map", "touch_map")
 
 # Define UI for random distribution app ----
 ui <- fluidPage(
@@ -155,8 +155,7 @@ ui <- fluidPage(
       br(),
       
       # Input: Checkbox for the user defined plots ----
-      checkboxGroupInput("plotz", "Select plots to graph", graphs),
-      
+      checkboxGroupInput("plot_options", "Select Plots to Display", choices = graphs),
     ),
     
     # Main panel for displaying outputs ----
@@ -175,9 +174,10 @@ ui <- fluidPage(
                            tableOutput("recoveries"),
                            tableOutput("dribbles"),
                            tableOutput("carries")),
-                  tabPanel("Plot", plotOutput("viz")
-                           # plotOutput("viz2"),
-                           # plotOutput("viz3")
+                  tabPanel("Plot", 
+                           plotOutput("viz"),
+                           plotOutput("viz2"),
+                           plotOutput("viz3")
                            ),
                   tabPanel("Match Events", dataTableOutput("details")),
                   )
@@ -341,34 +341,116 @@ server <- function(input, output, session) {
   options = list(
     pageLength = 5))
   
-  #SHOTS PLOT ----
-  output$viz <- renderPlot({
-    events.data <- values$df %>%
-      filter(Category == 'Shot') %>%
-      select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y)
-
-    ggplot(events.data, aes(x=X, y=Y, color = Subcategory)) +
-      annotate_pitch(fill = 'darkgrey', colour = 'white') +
-      geom_point() +
-      theme_pitch()
+  #PLOT OPTIONS ---
+  
+  # Plotting Shot Maps, Pass Maps, Touch Maps ----
+  
+  observe({
+    selected_plots <- input$plot_options
+    
+    # Render Shots Plot if selected
+    if ("shot_map" %in% selected_plots) {
+      output$viz <- renderPlot({
+        events.data <- values$df %>%
+          filter(Category == 'Shot') %>%
+          select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y)
+        
+        ggplot(events.data, aes(x=X, y=Y, color = Subcategory)) +
+          annotate_pitch(fill = 'darkgrey', colour = 'white') +
+          geom_point() +
+          theme_pitch()
+      })
+    } else {
+      output$viz <- renderPlot({ NULL }) # Render a blank plot if not selected
+    }
+    
+    # Render Pass Map if selected
+    if ("pass_map" %in% selected_plots) {
+      output$viz2 <- renderPlot({
+        events.data <- values$df %>%
+          filter(Category == 'Pass') %>%
+          select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y, X2, Y2)
+        
+        ggplot(events.data, aes(x=X, y=Y, xend = X2, yend = Y2, color = Result)) +
+          annotate_pitch(fill = 'darkgrey', colour = 'white') +
+          geom_segment() +
+          theme_pitch()
+      })
+    } else {
+      output$viz2 <- renderPlot({ NULL }) # Render a blank plot if not selected
+    }
+    
+    # Render Touch Map if selected
+    if ("touch_map" %in% selected_plots) {
+      output$viz3 <- renderPlot({
+        events.data <- values$df %>%
+          filter(Category == 'Shot' | Category == 'Pass'| Category == 'Duel' | Category == 'Offense' | Category == 'Defense' | Subcategory == 'Offside') %>%
+          mutate(Narrative = case_when(
+            Category == "Pass" ~ paste(Category),
+            Category == "Shot" ~ paste(Category),
+            Category == "Duel" ~ paste(Category),
+            Category == "Offense" ~ paste(Subcategory),
+            Category == "Defense" ~ paste(Subcategory),
+            Subcategory == "Offside" ~ paste(Subcategory),
+            TRUE ~ "Other Scenarios" # Default narrative for all other cases
+          )) %>%
+          select(Narrative, Timestamp, X, Y)
+        
+        ggplot(events.data, aes(x=X, y=Y, color = Narrative)) +
+          annotate_pitch(fill = 'darkgrey', colour = 'white') +
+          geom_point() +
+          theme_pitch()
+      })
+    } else {
+      output$viz3 <- renderPlot({ NULL }) # Render a blank plot if not selected
+    }
   })
-
+  
+  # observeEvent(input$plot_options, {
+  #   # Check which plots were selected
+  #   selected_plots <- input$plot_options
+  #   
+  #   # Use updateTabsetPanel to dynamically show/hide the plots
+  #   if ("shot map" %in% selected_plots) {
+  #     updateTabsetPanel(session, "plot_tab", selected = "viz")
+  #   }
+  #   if ("pass map" %in% selected_plots) {
+  #     updateTabsetPanel(session, "plot_tab", selected = "viz2")
+  #   }
+  #   if ("touch map" %in% selected_plots) {
+  #     updateTabsetPanel(session, "plot_tab", selected = "viz3")
+  #   }
+  # })
+  # 
+  # 
+  # #SHOTS PLOT ----
+  # output$viz <- renderPlot({
+  #   events.data <- values$df %>%
+  #     filter(Category == 'Shot') %>%
+  #     select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y)
+  # 
+  #   ggplot(events.data, aes(x=X, y=Y, color = Subcategory)) +
+  #     annotate_pitch(fill = 'darkgrey', colour = 'white') +
+  #     geom_point() +
+  #     theme_pitch()
+  # })
+  # 
   # #PASS MAP
   # output$viz2 <- renderPlot({
   #   events.data <- values$df %>%
-  #     filter(Category == 'Pass') %>% 
+  #     filter(Category == 'Pass') %>%
   #     select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y, X2, Y2)
-  #   
-  #   ggplot(events.data, aes(x=X, y=Y, xend = X2, yend = Y2, color = Result)) + 
-  #     annotate_pitch(fill = 'darkgrey', colour = 'white') + 
-  #     geom_segment() + 
+  # 
+  #   ggplot(events.data, aes(x=X, y=Y, xend = X2, yend = Y2, color = Result)) +
+  #     annotate_pitch(fill = 'darkgrey', colour = 'white') +
+  #     geom_segment() +
   #     theme_pitch()
   # })
   # 
   # #TOUCH MAP
   # output$viz3 <- renderPlot({
   #   events.data <- values$df %>%
-  #     filter(Category == 'Shot' | Category == 'Pass'| Category == 'Duel' | Category == 'Offense' | Category == 'Defense' | Subcategory == 'Offside') %>% 
+  #     filter(Category == 'Shot' | Category == 'Pass'| Category == 'Duel' | Category == 'Offense' | Category == 'Defense' | Subcategory == 'Offside') %>%
   #     mutate(Narrative = case_when(
   #       Category == "Pass" ~ paste(Category),
   #       Category == "Shot" ~ paste(Category),
@@ -379,10 +461,10 @@ server <- function(input, output, session) {
   #       TRUE ~ "Other Scenarios" # Default narrative for all other cases
   #     )) %>%
   #     select(Narrative, Timestamp, X, Y)
-  #   
-  #   ggplot(events.data, aes(x=X, y=Y, color = Narrative)) + 
-  #     annotate_pitch(fill = 'darkgrey', colour = 'white') + 
-  #     geom_point() + 
+  # 
+  #   ggplot(events.data, aes(x=X, y=Y, color = Narrative)) +
+  #     annotate_pitch(fill = 'darkgrey', colour = 'white') +
+  #     geom_point() +
   #     theme_pitch()
   # })
   
