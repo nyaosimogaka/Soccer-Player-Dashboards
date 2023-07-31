@@ -1,10 +1,13 @@
-#Load Libraries
+#Load Libraries ----
+
 library(shiny)
 library(dplyr)
 library(tidyr)
 library(knitr)
 library(ggplot2)
 library(ggsoccer)
+
+
 ## DATA PROCESSING ----
 
 #Read data ----
@@ -17,7 +20,7 @@ df$Y2 <- 100-as.numeric(df$Y2)
 df$X <- as.numeric(df$X)
 df$X2 <- as.numeric(df$X2)
 
-#Player Details Table Function
+#Player Details Table Function ----
 display.details <- function(x) {
   details.table <- x %>%
     select(Opponent, Category, Subcategory, Result, period, Timestamp) %>%
@@ -47,7 +50,7 @@ display.details <- function(x) {
     select(Opponent, Event, period, Timestamp)
 }
 
-#Goals Function
+#Goals Function ----
 calculate.goals <- function(x) {
   goals.table <- x %>%
     filter(Result == 'Goal') %>%
@@ -55,7 +58,7 @@ calculate.goals <- function(x) {
     count(Result)
 }
 
-#Shots Function
+#Shots Function ----
 calculate.shots <- function(x) {
   shots.table <- x %>%
     filter(Category == 'Shot') %>%
@@ -65,7 +68,7 @@ calculate.shots <- function(x) {
     pivot_wider(names_from = Subcategory, values_from = n)
 }
 
-#Fouls Function
+#Fouls Function ----
 calculate.fouls <- function(x) {
   fouls.table <- x %>%
     filter(Subcategory == 'Foul') %>%
@@ -73,7 +76,7 @@ calculate.fouls <- function(x) {
     count(Subcategory)
 }
 
-#Cards Function (Update to handle, Disc-Foul-yc, Disc-Foul-2yc, Disc-Foul-rc)
+#Cards Function (Update to handle, Disc-Foul-yc, Disc-Foul-2yc, Disc-Foul-rc) ----
 calculate.cards <- function(x) {
   cards.tables <- x %>%
     filter(Result == 'Yellow Card' | Result == 'Red Card') %>%
@@ -81,7 +84,19 @@ calculate.cards <- function(x) {
     count(Result)
 }
 
-#Challenges Function
+#Passes Function ----
+calculate.pass <- function(x) {
+  pass.table <- x %>%
+    filter(Category == 'Pass') %>%
+    select(Category, Subcategory, Result) %>%
+    mutate(Outcome = if_else(Result == 'Complete', 'good', 'not good')) %>%
+    select(Category, Subcategory, Outcome) %>%
+    group_by(Category, Subcategory, Outcome) %>%
+    count(Outcome) %>%
+    pivot_wider(names_from = Outcome, values_from = n)
+}
+
+#Challenges Function ----
 calculate.duels <- function(x) {
   duels.table <- x %>% 
     filter(Category == 'Duel') %>% 
@@ -95,7 +110,7 @@ calculate.duels <- function(x) {
     count(Result)
 }
 
-#Ball Recoveries Function
+#Ball Recoveries Function ----
 calculate.recoveries <- function(x) {
   recoveries.table <- x %>% 
     filter(Subcategory == 'Interception' | Subcategory == 'Tackle') %>% 
@@ -110,7 +125,7 @@ calculate.recoveries <- function(x) {
     count(Narrative)
 }
 
-#Dribbles Function
+#Dribbles Function ----
 calculate.dribbles <- function(x) {
   dribbles.table <- x %>% 
     filter(Subcategory == 'Dribble') %>%
@@ -119,7 +134,7 @@ calculate.dribbles <- function(x) {
     count(Result)
 }
 
-#Carries Function
+#Carries Function ----
 calculate.carries <- function(x) {
   carries.table <- x %>% 
     filter(Subcategory == 'Carry') %>%
@@ -128,9 +143,11 @@ calculate.carries <- function(x) {
     count(Subcategory)
 }
 
+#Define Graph Types ----
 graphs <- c("shot_map", "pass_map", "touch_map")
 
 # Define UI for random distribution app ----
+
 ui <- fluidPage(
   #App Theme ----
   theme = bslib::bs_theme(bootswatch = "darkly"),
@@ -151,7 +168,6 @@ ui <- fluidPage(
       selectInput("team", "Select Team", choices = unique(df$Team)),
       selectInput("player", "Select Player", choices = unique(df$Player)),
       
-      # br() element to introduce extra vertical spacing ----
       br(),
       
       # Input: Checkbox for the user defined plots ----
@@ -170,6 +186,7 @@ ui <- fluidPage(
                            tableOutput("shots"),
                            tableOutput("fouls"),
                            tableOutput("cards"),
+                           tableOutput("passes"),
                            tableOutput("duels"),
                            tableOutput("recoveries"),
                            tableOutput("dribbles"),
@@ -186,8 +203,9 @@ ui <- fluidPage(
     )
   )
 
-# Define server logic 
+# Define server logic ----
 server <- function(input, output, session) {
+  
   #Observer to update tournament selection
   
   observeEvent(input$tournament,{
@@ -275,7 +293,7 @@ server <- function(input, output, session) {
   })
 
   
-  #SHOTS INFO
+  #GOALS INFO
   output$goals <- renderTable({
     events.data <- values$df
     events.data %>%
@@ -304,6 +322,13 @@ server <- function(input, output, session) {
   })
   
   #PASS INFO
+  output$passes <- renderTable({
+    events.data <- values$df
+    events.data %>%
+      calculate.pass()
+  })
+  
+  #DUEL INFO
   output$duels <- renderTable({
     events.data <- values$df
     events.data %>%
@@ -405,69 +430,6 @@ server <- function(input, output, session) {
       output$viz3 <- renderPlot({ NULL }) # Render a blank plot if not selected
     }
   })
-  
-  # observeEvent(input$plot_options, {
-  #   # Check which plots were selected
-  #   selected_plots <- input$plot_options
-  #   
-  #   # Use updateTabsetPanel to dynamically show/hide the plots
-  #   if ("shot map" %in% selected_plots) {
-  #     updateTabsetPanel(session, "plot_tab", selected = "viz")
-  #   }
-  #   if ("pass map" %in% selected_plots) {
-  #     updateTabsetPanel(session, "plot_tab", selected = "viz2")
-  #   }
-  #   if ("touch map" %in% selected_plots) {
-  #     updateTabsetPanel(session, "plot_tab", selected = "viz3")
-  #   }
-  # })
-  # 
-  # 
-  # #SHOTS PLOT ----
-  # output$viz <- renderPlot({
-  #   events.data <- values$df %>%
-  #     filter(Category == 'Shot') %>%
-  #     select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y)
-  # 
-  #   ggplot(events.data, aes(x=X, y=Y, color = Subcategory)) +
-  #     annotate_pitch(fill = 'darkgrey', colour = 'white') +
-  #     geom_point() +
-  #     theme_pitch()
-  # })
-  # 
-  # #PASS MAP
-  # output$viz2 <- renderPlot({
-  #   events.data <- values$df %>%
-  #     filter(Category == 'Pass') %>%
-  #     select(Date, Opponent, Player, Category, Subcategory, Result, period, Timestamp, X, Y, X2, Y2)
-  # 
-  #   ggplot(events.data, aes(x=X, y=Y, xend = X2, yend = Y2, color = Result)) +
-  #     annotate_pitch(fill = 'darkgrey', colour = 'white') +
-  #     geom_segment() +
-  #     theme_pitch()
-  # })
-  # 
-  # #TOUCH MAP
-  # output$viz3 <- renderPlot({
-  #   events.data <- values$df %>%
-  #     filter(Category == 'Shot' | Category == 'Pass'| Category == 'Duel' | Category == 'Offense' | Category == 'Defense' | Subcategory == 'Offside') %>%
-  #     mutate(Narrative = case_when(
-  #       Category == "Pass" ~ paste(Category),
-  #       Category == "Shot" ~ paste(Category),
-  #       Category == "Duel" ~ paste(Category),
-  #       Category == "Offense" ~ paste(Subcategory),
-  #       Category == "Defense" ~ paste(Subcategory),
-  #       Subcategory == "Offside" ~ paste(Subcategory),
-  #       TRUE ~ "Other Scenarios" # Default narrative for all other cases
-  #     )) %>%
-  #     select(Narrative, Timestamp, X, Y)
-  # 
-  #   ggplot(events.data, aes(x=X, y=Y, color = Narrative)) +
-  #     annotate_pitch(fill = 'darkgrey', colour = 'white') +
-  #     geom_point() +
-  #     theme_pitch()
-  # })
-  
 }
 
 # Run the application 
