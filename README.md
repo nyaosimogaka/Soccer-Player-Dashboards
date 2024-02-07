@@ -6,4 +6,4 @@ This app has been built using R Shiny to demonstrate level-1 soccer match analys
 - Visualizations(Shot Maps, Touch Maps)
 
 - [Click here to read more](https://nyaosimogaka.github.io/shiny.html)
-- [Click here to view the app](https://mogakasteve.shinyapps.io/matchdata)
+- [Click here to view the app](https://nyaosimogaka.shinyapps.io/matchdata)
